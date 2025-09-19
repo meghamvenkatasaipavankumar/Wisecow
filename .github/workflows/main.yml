@@ -1,4 +1,4 @@
-name: CI/CD with Minikube
+name: CI/CD with Minikube + ngrok
 
 on:
   push:
@@ -7,10 +7,12 @@ on:
 jobs:
   build-deploy:
     runs-on: ubuntu-latest
+    outputs:
+      ngrok_url: ${{ steps.ngrok_url.outputs.url }}
 
     steps:
-      # 1. Checkout code
-      - name: Checkout repository
+      # 1. Checkout repo
+      - name: Checkout code
         uses: actions/checkout@v3
 
       # 2. Start Minikube
@@ -21,36 +23,50 @@ jobs:
 
       # 3. Build Docker image
       - name: Build Docker image
-        run: docker build -t my-app:latest .
+        run: |
+          docker build -t my-app:latest .
 
-      # 4. Import image into Minikube
+      # 4. Load image into Minikube
       - name: Import image into Minikube
-        run: minikube image load my-app:latest
+        run: |
+          minikube image load my-app:latest
 
       # 5. Deploy Kubernetes manifests
       - name: Deploy to Minikube
-        run: kubectl apply -f k8s/Deployment.yaml
+        run: |
+          kubectl apply -f k8s/Deployment.yaml
 
-      # 6. Verify resources
-      - name: Get Kubernetes resources
+      # 6. Verify pods and services
+      - name: Verify resources
         run: |
           kubectl get pods -o wide
           kubectl get svc -o wide
 
-      # 7. Port-forward & expose with ngrok
-      - name: Expose app with ngrok
+      # 7. Install ngrok
+      - name: Install ngrok
         run: |
           curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc > /dev/null
           echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
-          sudo apt update && sudo apt install -y ngrok
+          sudo apt update && sudo apt install -y ngrok jq
 
-          # Port-forward the pod
-          kubectl port-forward deployment/my-app 8081:4499 &
+      # 8. Start ngrok and get public URL
+      - name: Expose app with ngrok
+        id: ngrok_url
+        run: |
+          # Set ngrok auth token (from GitHub Secret)
+          ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+
+          # Port-forward service
+          kubectl port-forward svc/my-app-service 4499:4499 &
           sleep 5
 
-          # Start ngrok tunnel
-          ngrok http 8081 > ngrok.log &
-          sleep 5
+          # Start ngrok
+          ngrok http 4499 > ngrok.log &
+          sleep 10
 
-          # Print ngrok public URL
-          grep -m 1 -o 'https://[^ ]*\.ngrok-free.app' ngrok.log
+          # Extract public URL
+          URL=$(curl --silent --show-error http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+          echo "ngrok public URL: $URL"
+
+          # Set output for workflow
+          echo "url=$URL" >> $GITHUB_OUTPUT
