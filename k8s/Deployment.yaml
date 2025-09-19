@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  labels:
+    app: my-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+        - name: my-app
+          image: my-app:latest   # already loaded into Minikube
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 4499
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app-service
+spec:
+  selector:
+    app: my-app
+  ports:
+    - port: 4499       # service port
+      targetPort: 4499 # container port
+      nodePort: 30499  # external port (optional)
+  type: NodePort
+
