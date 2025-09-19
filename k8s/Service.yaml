@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app-service
+spec:
+  selector:
+    app: my-app
+  ports:
+    - port: 4499       # Cluster IP port
+      targetPort: 4499
+  type: ClusterIP
+
