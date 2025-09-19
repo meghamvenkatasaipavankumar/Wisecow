@@ -1,0 +1,56 @@
+name: CI/CD with Minikube
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2. Start Minikube
+      - name: Start Minikube
+        uses: medyagh/setup-minikube@latest
+        with:
+          driver: docker
+
+      # 3. Build Docker image
+      - name: Build Docker image
+        run: docker build -t my-app:latest .
+
+      # 4. Import image into Minikube
+      - name: Import image into Minikube
+        run: minikube image load my-app:latest
+
+      # 5. Deploy Kubernetes manifests
+      - name: Deploy to Minikube
+        run: kubectl apply -f k8s/Deployment.yaml
+
+      # 6. Verify resources
+      - name: Get Kubernetes resources
+        run: |
+          kubectl get pods -o wide
+          kubectl get svc -o wide
+
+      # 7. Port-forward & expose with ngrok
+      - name: Expose app with ngrok
+        run: |
+          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc > /dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt update && sudo apt install -y ngrok
+
+          # Port-forward the pod
+          kubectl port-forward deployment/my-app 8081:4499 &
+          sleep 5
+
+          # Start ngrok tunnel
+          ngrok http 8081 > ngrok.log &
+          sleep 5
+
+          # Print ngrok public URL
+          grep -m 1 -o 'https://[^ ]*\.ngrok-free.app' ngrok.log
